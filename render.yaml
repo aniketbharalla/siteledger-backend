@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: siteledger-api
+    runtime: node
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false        # set in Render dashboard
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: CORS_ORIGIN
+        sync: false        # set to your Vercel frontend URL
+      - key: SEED_SECRET
+        generateValue: true
