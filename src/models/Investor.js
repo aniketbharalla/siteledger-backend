@@ -20,7 +20,7 @@ const investorSchema = new mongoose.Schema(
     },
     share: {
       type: Number,
-      required: [true, 'Ownership share (%) is required'],
+      default: 0,
       min: [0, 'Share cannot be negative'],
       max: [100, 'Share cannot exceed 100%'],
     },

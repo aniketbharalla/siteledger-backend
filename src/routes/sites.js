@@ -13,10 +13,9 @@ router.use(protect);
 
 const siteBodyValidation = [
   body('code')
-    .optional()
+    .optional({ checkFalsy: true })   // treat empty string as absent
     .trim()
     .toUpperCase()
-    .notEmpty().withMessage('Site code cannot be blank')
     .isLength({ max: 10 }).withMessage('Site code cannot exceed 10 characters'),
   body('name')
     .trim()
@@ -29,7 +28,7 @@ const siteBodyValidation = [
     .optional()
     .isIn(['active', 'completed']).withMessage('Status must be "active" or "completed"'),
   body('startDate')
-    .notEmpty().withMessage('Start date is required')
+    .optional({ checkFalsy: true })
     .isISO8601().withMessage('Start date must be a valid ISO 8601 date'),
   body('totalBudget')
     .notEmpty().withMessage('Total budget is required')
@@ -89,8 +88,8 @@ router.post('/', siteBodyValidation, async (req, res) => {
       code: siteCode,
       name,
       location,
-      status,
-      startDate,
+      status: status || 'active',
+      startDate: startDate || new Date(),
       totalBudget,
       cover,
     });
@@ -101,7 +100,11 @@ router.post('/', siteBodyValidation, async (req, res) => {
     if (err.code === 11000) {
       return res.status(409).json({ success: false, message: 'Site code must be unique.' });
     }
-    res.status(500).json({ success: false, message: 'Failed to create site.' });
+    if (err.name === 'ValidationError') {
+      const messages = Object.values(err.errors).map((e) => e.message).join(', ');
+      return res.status(422).json({ success: false, message: messages });
+    }
+    res.status(500).json({ success: false, message: err.message || 'Failed to create site.' });
   }
 });
 

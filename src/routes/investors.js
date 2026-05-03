@@ -23,15 +23,23 @@ const investorBodyValidation = [
   body('amount')
     .notEmpty().withMessage('Amount is required')
     .isFloat({ min: 0 }).withMessage('Amount must be a non-negative number'),
-  body('share')
-    .notEmpty().withMessage('Share percentage is required')
-    .isFloat({ min: 0, max: 100 }).withMessage('Share must be between 0 and 100'),
   body('date')
     .optional()
     .isISO8601().withMessage('Date must be a valid ISO 8601 date'),
 ];
 
-// ─── Routes ───────────────────────────────────────────────────────────────────
+// ─── Helper: recalculate share % for all investors of a site ─────────────────
+async function recalcShares(siteId) {
+  const all = await Investor.find({ siteId });
+  const total = all.reduce((s, i) => s + (i.amount || 0), 0);
+  if (total === 0) return;
+  await Promise.all(
+    all.map(inv => {
+      const share = parseFloat(((inv.amount / total) * 100).toFixed(4));
+      return Investor.findByIdAndUpdate(inv._id, { share });
+    })
+  );
+}
 
 /**
  * GET /api/investors?siteId=xxx
@@ -78,7 +86,7 @@ router.post('/', investorBodyValidation, async (req, res) => {
   }
 
   try {
-    const { siteId, name, amount, share, date } = req.body;
+    const { siteId, name, amount, date } = req.body;
 
     // Verify the referenced site exists
     const site = await Site.findById(siteId);
@@ -86,13 +94,24 @@ router.post('/', investorBodyValidation, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Referenced site not found.' });
     }
 
-    const investor = await Investor.create({ siteId, name, amount, share, date });
-    const populated = await investor.populate('siteId', 'code name location status cover');
+    // Create with share=0 temporarily, then recalculate all shares for this site
+    const investor = await Investor.create({ siteId, name, amount, share: 0, date });
+    await recalcShares(siteId);
+
+    const populated = await Investor.findById(investor._id)
+      .populate('siteId', 'code name location status cover');
 
     res.status(201).json({ success: true, data: populated });
   } catch (err) {
     console.error('POST /investors error:', err);
-    res.status(500).json({ success: false, message: 'Failed to create investor.' });
+    if (err.name === 'ValidationError') {
+      const messages = Object.values(err.errors).map((e) => e.message).join(', ');
+      return res.status(422).json({ success: false, message: messages });
+    }
+    if (err.code === 11000) {
+      return res.status(409).json({ success: false, message: 'Duplicate investor entry.' });
+    }
+    res.status(500).json({ success: false, message: err.message || 'Failed to create investor.' });
   }
 });
 
@@ -113,7 +132,6 @@ router.put(
     body('name').optional().trim().notEmpty().isLength({ max: 120 }),
     body('siteId').optional().custom((v) => mongoose.Types.ObjectId.isValid(v)).withMessage('siteId must be a valid ObjectId'),
     body('amount').optional().isFloat({ min: 0 }),
-    body('share').optional().isFloat({ min: 0, max: 100 }),
     body('date').optional().isISO8601(),
   ],
   async (req, res) => {
@@ -123,7 +141,7 @@ router.put(
     }
 
     try {
-      const allowedFields = ['name', 'siteId', 'amount', 'share', 'date'];
+      const allowedFields = ['name', 'siteId', 'amount', 'date'];
       const updates = {};
       allowedFields.forEach((field) => {
         if (req.body[field] !== undefined) updates[field] = req.body[field];
@@ -138,11 +156,17 @@ router.put(
         req.params.id,
         { $set: updates },
         { new: true, runValidators: true }
-      ).populate('siteId', 'code name location status cover');
+      );
 
       if (!investor) return res.status(404).json({ success: false, message: 'Investor not found.' });
 
-      res.json({ success: true, data: investor });
+      // Recalculate shares for the site after amount change
+      await recalcShares(investor.siteId);
+
+      const populated = await Investor.findById(investor._id)
+        .populate('siteId', 'code name location status cover');
+
+      res.json({ success: true, data: populated });
     } catch (err) {
       console.error('PUT /investors/:id error:', err);
       res.status(500).json({ success: false, message: 'Failed to update investor.' });
@@ -163,6 +187,10 @@ router.delete('/:id', idParam, async (req, res) => {
   try {
     const investor = await Investor.findByIdAndDelete(req.params.id);
     if (!investor) return res.status(404).json({ success: false, message: 'Investor not found.' });
+
+    // Recalculate shares for remaining investors on this site
+    await recalcShares(investor.siteId);
+
     res.json({ success: true, message: 'Investor deleted successfully.' });
   } catch (err) {
     console.error('DELETE /investors/:id error:', err);
