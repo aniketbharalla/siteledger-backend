@@ -177,4 +177,26 @@ router.put(
   }
 );
 
+/**
+ * DELETE /api/sites/:id
+ * Permanently delete a site.
+ */
+router.delete('/:id', idParam, async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(422).json({ success: false, errors: errors.array() });
+  }
+
+  try {
+    const site = await Site.findByIdAndDelete(req.params.id);
+    if (!site) {
+      return res.status(404).json({ success: false, message: 'Site not found.' });
+    }
+    res.json({ success: true, message: 'Site deleted successfully.' });
+  } catch (err) {
+    console.error('DELETE /sites/:id error:', err);
+    res.status(500).json({ success: false, message: 'Failed to delete site.' });
+  }
+});
+
 module.exports = router;
