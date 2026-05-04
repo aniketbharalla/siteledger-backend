@@ -9,84 +9,68 @@ const router = express.Router();
 
 router.use(protect);
 
+// Members cannot access payment data
+router.use((req, res, next) => {
+  if (req.user.role === 'member') {
+    return res.status(403).json({ success: false, message: 'Access denied. Members cannot access payment data.' });
+  }
+  next();
+});
+
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 const paymentBodyValidation = [
-  body('siteId')
-    .notEmpty().withMessage('siteId is required')
-    .custom((v) => mongoose.Types.ObjectId.isValid(v))
-    .withMessage('siteId must be a valid ObjectId'),
-  body('clientName')
-    .trim()
-    .notEmpty().withMessage('Client name is required')
-    .isLength({ max: 120 }).withMessage('Client name cannot exceed 120 characters'),
-  body('amount')
-    .notEmpty().withMessage('Amount is required')
-    .isFloat({ min: 0 }).withMessage('Amount must be a non-negative number'),
-  body('date')
-    .optional()
-    .isISO8601().withMessage('Date must be a valid ISO 8601 date'),
-  body('milestone')
-    .trim()
-    .notEmpty().withMessage('Milestone is required')
-    .isLength({ max: 200 }).withMessage('Milestone cannot exceed 200 characters'),
+  body('siteId').notEmpty().withMessage('siteId is required').custom((v) => mongoose.Types.ObjectId.isValid(v)).withMessage('siteId must be a valid ObjectId'),
+  body('clientName').trim().notEmpty().withMessage('Client name is required').isLength({ max: 120 }),
+  body('amount').notEmpty().withMessage('Amount is required').isFloat({ min: 0 }),
+  body('date').optional().isISO8601(),
+  body('milestone').trim().notEmpty().withMessage('Milestone is required').isLength({ max: 200 }),
+];
+
+const idParam = [
+  param('id').custom((v) => mongoose.Types.ObjectId.isValid(v)).withMessage('Invalid payment ID'),
 ];
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
-/**
- * GET /api/payments?siteId=xxx
- * List client payments, optionally filtered by site.
- */
-router.get(
-  '/',
-  [
-    query('siteId')
-      .optional()
-      .custom((v) => mongoose.Types.ObjectId.isValid(v))
-      .withMessage('siteId must be a valid ObjectId'),
-  ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(422).json({ success: false, errors: errors.array() });
-    }
+// GET /api/payments — scoped to org
+router.get('/', [
+  query('siteId').optional().custom((v) => mongoose.Types.ObjectId.isValid(v)).withMessage('siteId must be a valid ObjectId'),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(422).json({ success: false, errors: errors.array() });
 
-    try {
-      const filter = {};
-      if (req.query.siteId) filter.siteId = req.query.siteId;
+  try {
+    const filter = { orgId: req.user.orgId };
+    if (req.query.siteId) filter.siteId = req.query.siteId;
 
-      const payments = await Payment.find(filter)
-        .populate('siteId', 'code name cover')
-        .sort({ date: -1 });
+    const payments = await Payment.find(filter)
+      .populate('siteId', 'code name cover')
+      .sort({ date: -1 });
 
-      res.json({ success: true, count: payments.length, data: payments });
-    } catch (err) {
-      console.error('GET /payments error:', err);
-      res.status(500).json({ success: false, message: 'Failed to retrieve payments.' });
-    }
+    res.json({ success: true, count: payments.length, data: payments });
+  } catch (err) {
+    console.error('GET /payments error:', err);
+    res.status(500).json({ success: false, message: 'Failed to retrieve payments.' });
   }
-);
+});
 
-/**
- * POST /api/payments
- * Record a new client payment.
- */
+// POST /api/payments — scoped to org
 router.post('/', paymentBodyValidation, async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(422).json({ success: false, errors: errors.array() });
-  }
+  if (!errors.isEmpty()) return res.status(422).json({ success: false, errors: errors.array() });
 
   try {
     const { siteId, clientName, amount, date, milestone } = req.body;
+    const orgId = req.user.orgId;
 
-    const site = await Site.findById(siteId);
-    if (!site) {
-      return res.status(404).json({ success: false, message: 'Referenced site not found.' });
-    }
+    if (!orgId) return res.status(400).json({ success: false, message: 'Your account is not linked to an organisation.' });
 
-    const payment = await Payment.create({ siteId, clientName, amount, date, milestone });
+    // Verify site belongs to same org
+    const site = await Site.findOne({ _id: siteId, orgId });
+    if (!site) return res.status(404).json({ success: false, message: 'Site not found in your organisation.' });
+
+    const payment = await Payment.create({ siteId, clientName, amount, date, milestone, orgId });
     const populated = await payment.populate('siteId', 'code name cover');
 
     res.status(201).json({ success: true, data: populated });
@@ -96,72 +80,49 @@ router.post('/', paymentBodyValidation, async (req, res) => {
   }
 });
 
-const idParam = [
-  param('id')
-    .custom((v) => mongoose.Types.ObjectId.isValid(v))
-    .withMessage('Invalid payment ID'),
-];
-
-/**
- * PUT /api/payments/:id
- * Partial update of a payment record.
- */
-router.put(
-  '/:id',
-  [
-    ...idParam,
-    body('clientName').optional().trim().notEmpty().isLength({ max: 120 }),
-    body('siteId').optional().custom((v) => mongoose.Types.ObjectId.isValid(v)).withMessage('siteId must be a valid ObjectId'),
-    body('amount').optional().isFloat({ min: 0 }),
-    body('date').optional().isISO8601(),
-    body('milestone').optional().trim().notEmpty().isLength({ max: 200 }),
-  ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(422).json({ success: false, errors: errors.array() });
-    }
-
-    try {
-      const allowedFields = ['clientName', 'siteId', 'amount', 'date', 'milestone'];
-      const updates = {};
-      allowedFields.forEach((field) => {
-        if (req.body[field] !== undefined) updates[field] = req.body[field];
-      });
-
-      if (updates.siteId) {
-        const site = await Site.findById(updates.siteId);
-        if (!site) return res.status(404).json({ success: false, message: 'Referenced site not found.' });
-      }
-
-      const payment = await Payment.findByIdAndUpdate(
-        req.params.id,
-        { $set: updates },
-        { new: true, runValidators: true }
-      ).populate('siteId', 'code name cover');
-
-      if (!payment) return res.status(404).json({ success: false, message: 'Payment not found.' });
-
-      res.json({ success: true, data: payment });
-    } catch (err) {
-      console.error('PUT /payments/:id error:', err);
-      res.status(500).json({ success: false, message: 'Failed to update payment.' });
-    }
-  }
-);
-
-/**
- * DELETE /api/payments/:id
- * Permanently delete a payment record.
- */
-router.delete('/:id', idParam, async (req, res) => {
+// PUT /api/payments/:id — scoped to org
+router.put('/:id', [
+  ...idParam,
+  body('clientName').optional().trim().notEmpty().isLength({ max: 120 }),
+  body('siteId').optional().custom((v) => mongoose.Types.ObjectId.isValid(v)).withMessage('siteId must be a valid ObjectId'),
+  body('amount').optional().isFloat({ min: 0 }),
+  body('date').optional().isISO8601(),
+  body('milestone').optional().trim().notEmpty().isLength({ max: 200 }),
+], async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(422).json({ success: false, errors: errors.array() });
-  }
+  if (!errors.isEmpty()) return res.status(422).json({ success: false, errors: errors.array() });
 
   try {
-    const payment = await Payment.findByIdAndDelete(req.params.id);
+    const allowedFields = ['clientName', 'siteId', 'amount', 'date', 'milestone'];
+    const updates = {};
+    allowedFields.forEach((field) => { if (req.body[field] !== undefined) updates[field] = req.body[field]; });
+
+    if (updates.siteId) {
+      const site = await Site.findOne({ _id: updates.siteId, orgId: req.user.orgId });
+      if (!site) return res.status(404).json({ success: false, message: 'Site not found in your organisation.' });
+    }
+
+    const payment = await Payment.findOneAndUpdate(
+      { _id: req.params.id, orgId: req.user.orgId },
+      { $set: updates },
+      { new: true, runValidators: true }
+    ).populate('siteId', 'code name cover');
+
+    if (!payment) return res.status(404).json({ success: false, message: 'Payment not found.' });
+    res.json({ success: true, data: payment });
+  } catch (err) {
+    console.error('PUT /payments/:id error:', err);
+    res.status(500).json({ success: false, message: 'Failed to update payment.' });
+  }
+});
+
+// DELETE /api/payments/:id — scoped to org
+router.delete('/:id', idParam, async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(422).json({ success: false, errors: errors.array() });
+
+  try {
+    const payment = await Payment.findOneAndDelete({ _id: req.params.id, orgId: req.user.orgId });
     if (!payment) return res.status(404).json({ success: false, message: 'Payment not found.' });
     res.json({ success: true, message: 'Payment deleted successfully.' });
   } catch (err) {

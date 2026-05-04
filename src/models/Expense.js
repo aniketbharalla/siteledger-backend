@@ -45,6 +45,12 @@ const expenseSchema = new mongoose.Schema(
       },
       default: 'pending',
     },
+    orgId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Organisation',
+      required: true,
+      index: true,
+    },
   },
   {
     timestamps: true,

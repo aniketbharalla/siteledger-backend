@@ -29,6 +29,12 @@ const paymentSchema = new mongoose.Schema(
       trim: true,
       maxlength: [200, 'Milestone cannot exceed 200 characters'],
     },
+    orgId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Organisation',
+      required: true,
+      index: true,
+    },
   },
   {
     timestamps: true,

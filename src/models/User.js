@@ -23,13 +23,18 @@ const userSchema = new mongoose.Schema(
       minlength: [6, 'Password must be at least 6 characters'],
       select: false, // never returned in queries by default
     },
+    orgId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Organisation',
+      default: null,
+    },
     role: {
       type: String,
       enum: {
-        values: ['owner', 'admin'],
-        message: 'Role must be "owner" or "admin"',
+        values: ['owner', 'admin', 'member'],
+        message: 'Role must be owner, admin, or member',
       },
-      default: 'admin',
+      default: 'member',
     },
   },
   {

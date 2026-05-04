@@ -29,6 +29,12 @@ const investorSchema = new mongoose.Schema(
       required: [true, 'Investment date is required'],
       default: Date.now,
     },
+    orgId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Organisation',
+      required: true,
+      index: true,
+    },
   },
   {
     timestamps: true,

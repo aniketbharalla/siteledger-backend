@@ -43,6 +43,12 @@ const siteSchema = new mongoose.Schema(
       default: 'oklch(0.62 0.08 220)',
       trim: true,
     },
+    orgId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Organisation',
+      required: true,
+      index: true,
+    },
   },
   {
     timestamps: true,
