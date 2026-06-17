@@ -12,6 +12,9 @@ const expenseRoutes = require('./src/routes/expenses');
 const paymentRoutes = require('./src/routes/payments');
 const statsRoutes = require('./src/routes/stats');
 const seedRoutes = require('./src/routes/seed');
+const boqRoutes = require('./src/routes/boq');
+const vendorRoutes = require('./src/routes/vendors');
+const gstRoutes = require('./src/routes/gst');
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 const app = express();
@@ -49,6 +52,9 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/seed', seedRoutes);
+app.use('/api/boq', boqRoutes);
+app.use('/api/vendors', vendorRoutes);
+app.use('/api/gst', gstRoutes);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 app.use((req, res) => {

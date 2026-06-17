@@ -21,6 +21,14 @@ const siteSchema = new mongoose.Schema(
       required: [true, 'Location is required'],
       trim: true,
     },
+    projectType: {
+      type: String,
+      enum: {
+        values: ['building', 'road', 'bridge', 'canal', 'interior', 'other'],
+        message: 'Project type must be building, road, bridge, canal, interior, or other',
+      },
+      default: 'building',
+    },
     status: {
       type: String,
       enum: {
@@ -32,6 +40,16 @@ const siteSchema = new mongoose.Schema(
     startDate: {
       type: Date,
       required: [true, 'Start date is required'],
+    },
+    expectedEndDate: {
+      type: Date,
+      default: null,
+    },
+    completionPct: {
+      type: Number,
+      default: 0,
+      min: [0, 'Completion cannot be negative'],
+      max: [100, 'Completion cannot exceed 100%'],
     },
     totalBudget: {
       type: Number,
@@ -59,5 +77,6 @@ const siteSchema = new mongoose.Schema(
 
 // Index for common queries
 siteSchema.index({ status: 1 });
+siteSchema.index({ projectType: 1 });
 
 module.exports = mongoose.model('Site', siteSchema);

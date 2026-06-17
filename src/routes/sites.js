@@ -22,8 +22,11 @@ const siteBodyValidation = [
   body('code').optional({ checkFalsy: true }).trim().toUpperCase().isLength({ max: 10 }).withMessage('Site code cannot exceed 10 characters'),
   body('name').trim().notEmpty().withMessage('Site name is required').isLength({ max: 120 }),
   body('location').trim().notEmpty().withMessage('Location is required'),
+  body('projectType').optional().isIn(['building', 'road', 'bridge', 'canal', 'interior', 'other']).withMessage('Invalid project type'),
   body('status').optional().isIn(['active', 'completed']).withMessage('Status must be "active" or "completed"'),
   body('startDate').optional({ checkFalsy: true }).isISO8601().withMessage('Start date must be a valid ISO 8601 date'),
+  body('expectedEndDate').optional({ checkFalsy: true }).isISO8601().withMessage('Expected end date must be a valid ISO 8601 date'),
+  body('completionPct').optional().isFloat({ min: 0, max: 100 }).withMessage('Completion must be 0–100'),
   body('totalBudget').notEmpty().withMessage('Total budget is required').isFloat({ min: 0 }),
   body('cover').optional().trim(),
 ];
@@ -106,8 +109,11 @@ router.put('/:id', [
   body('code').optional().trim().toUpperCase().isLength({ max: 10 }),
   body('name').optional().trim().notEmpty().isLength({ max: 120 }),
   body('location').optional().trim().notEmpty(),
+  body('projectType').optional().isIn(['building', 'road', 'bridge', 'canal', 'interior', 'other']),
   body('status').optional().isIn(['active', 'completed']),
   body('startDate').optional().isISO8601(),
+  body('expectedEndDate').optional({ checkFalsy: true }).isISO8601(),
+  body('completionPct').optional().isFloat({ min: 0, max: 100 }),
   body('totalBudget').optional().isFloat({ min: 0 }),
   body('cover').optional().trim(),
 ], async (req, res) => {
@@ -115,7 +121,7 @@ router.put('/:id', [
   if (!errors.isEmpty()) return res.status(422).json({ success: false, errors: errors.array() });
 
   try {
-    const allowedFields = ['code', 'name', 'location', 'status', 'startDate', 'totalBudget', 'cover'];
+    const allowedFields = ['code', 'name', 'location', 'projectType', 'status', 'startDate', 'expectedEndDate', 'completionPct', 'totalBudget', 'cover'];
     const updates = {};
     allowedFields.forEach((field) => { if (req.body[field] !== undefined) updates[field] = req.body[field]; });
 
